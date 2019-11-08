@@ -26,6 +26,25 @@ def parseFile(lstFile): #Read mfetch.lst for the beginning of art file
 		lstList.remove(lstList[0])
 		lstList.remove(lstList[len(lstList)-1])
 		return lstList
+		
+def parseVolFile(lstFile): #Read volatility.lst for the beginning of art file
+	if (os.path.isfile(lstFile)):
+		f= open(lstFile,"r")
+		lstList = f.readlines()
+		lstList.remove(lstList[0])
+		lstList.remove(lstList[len(lstList)-1])
+		for line in lstList:
+			line = line.split()
+			addRange = []
+			addRange.append(line[1])
+			addRange.append(line[2])
+			if (len(line)==6):
+				name =line[5]
+			else:
+				name =line[4]
+			listing.update({name:addRange})
+		del listing["----"]
+		return [listing, lstList]
 
 def getSE(lstList):#address start and end
 	start = lstList[0]
@@ -50,12 +69,13 @@ def getAddrRange(lstList):
 	return listing
 
 def getLibART(bss, instance): #search for libart.so
-	print instance
 	insAddr =0;
 	if ("[anon:.bss]") in bss: 
 		addRange = [j for j in bss.split() if ("0x") in j]
 		start = addRange[0]
 		end = addRange[1]
+		#print instance
+		#print start
 		insAddr = int("0x"+instance[len(instance)-4:], 16) -  int("0x"+start[len(start)-4:], 16)
 	return insAddr
 
@@ -84,9 +104,20 @@ def getRuntime(path): #Get runtime instance
 	process = subprocess.check_output("nm -aS "+path+"/"+libart+" | grep \"_ZN3art7Runtime9instance_E\"", shell = True)
 	return process.split()[0] 
 	
-def getBss(lstList, path):#get bss section and search for runtime instance
-	libRange = [i for i in lstList if ("MAPPED FROM: /system/lib/libart.so") in i]
-	return lstList[lstList.index(libRange[2])+1]
+def getBss(lstList, path, instance):#get bss section and search for runtime instance
+	libRange = [i for i in lstList if ("/libart.so") in i] #find all insances of libart in mfetch.lst
+	address = []
+	for entry in libRange:
+		addRange = [j for j in entry.split() if ("0x") in j] #find begin and end address
+		address.append(addRange[0])
+		address.append(addRange[1])
+	#very tricky calculation = Size of mapping = end of libart mapping - start of libart mapping 
+	# runtime offset - size of mapping = offset from start of heap (mem address) 
+	#hex(0xe3097000 - 0xe2998000) = 0x6ff000
+	#hex(0x70a980 - 0x6ff000) = 0xb980
+	#hex(0xe308c000+0xb980) = 0xe3097980 - address offset for runtime in heap dereference to get beginning of runtime object
+	address = int(address[1], 16) + (int(instance, 16) - (int(address[len(address)-1], 16) - int(address[0], 16)))
+	return [hex(address)]
 	
 def getOffset(a, alist):
 	[addr, start, key] = findAddr(a, alist)
@@ -98,14 +129,13 @@ def getOffset(a, alist):
 		aPath = None
 	return [aPath, offset]
 	
-def runtimeObj(rPath, bss, instance, memList):
+def runtimeObj(address, memList):
+	[rPath,rAddr] = getOffset(address, memList)
 	with open(rPath, 'rb') as g:
-		#g.seek(getLibART(bss, instance)) --- to fix this function, extract last three digit from the runtime instance address - 0070a980
-		g.seek(int(hex(0x980), 16))
+		g.seek(rAddr)
 		runtime = hex(struct.unpack("<I", g.read(4))[0])
-		#print "Runtime Address is @ "+ runtime
-		[nPath, rAddr] = getOffset(runtime, memList)
-		return [runtime, nPath, rAddr]	
+		[nPath, nAddr] = getOffset(runtime, memList)
+		return [runtime, nPath, nAddr]	
 
 def getFhandle(f):
 	fhandle =  open(f, 'rb')
@@ -113,18 +143,19 @@ def getFhandle(f):
 		
 def main(projPath):
 	path = projPath
+	print path
 	instance = getRuntime(path)
 	lst = [filename for filename in os.listdir(path) if filename.endswith("lst")][0]
 	lstFile = path+"/"+lst
-	#lstFile = path+"/mfetch.lst"
-	lstList = parseFile(lstFile)
-	listing = getAddrRange(lstList)
+	if lst=="mfetch.lst": # Its mefetch dump
+		lstList = parseFile(lstFile)
+		listing = getAddrRange(lstList)
+	else:
+		[listing, lstList] = parseVolFile(lstFile)# Its linux_dump_map dump from volatility
+	[address] = getBss(lstList, path, instance)
 	[memList.update({key:value}) for key, value in listing.items() if key.startswith("mem")]	
 	[mapList.update({key:value}) for key, value in listing.items() if key.startswith("map")]
-#mapList= OrderedDict()
-#[mapList.update({key:value}) for key, value in listing.items() if key.startswith("map")]
-	bss = getBss(lstList, path)
-	[runtime, nPath, rAddr] = runtimeObj(lstPath(path, bss), bss, instance, memList)
+	[runtime, nPath, rAddr] = runtimeObj(address, memList)
 	return[nPath, rAddr, memList, mapList,listing, lstList, runtime]
 
 def readString(dPath, dOff, size):
@@ -194,3 +225,30 @@ def helper(hp, th, nPath, rAddr, path, memList):
 	threads = th.__main__(nPath, rAddr, path, memList)
 	return [TLAB, NonTLAB, threads]
 
+'''def parseFile(lstFile): #Read mfetch.lst for the beginning of art file
+	listing= OrderedDict()
+	if (os.path.isfile(lstFile)):
+		f= open(lstFile,"r")
+		lstList = f.readlines()
+		lstList.remove(lstList[0])
+		lstList.remove(lstList[len(lstList)-1])
+		for line in lstList:
+			line = line.split()
+			addRange = []
+			addRange.append(line[1])
+			addRange.append(line[2])
+			if (len(line)==6):
+				name =line[5]
+			else:
+				name =line[4]
+			listing.update({name:addRange})
+		del listing["----"]
+		return lstList
+		
+def getSE(lstList):#address start and end
+	start = lstList[0]
+	end = lstList[len(lstList)-1]
+	start = start[start.index("range")+6 :start.index("to")-1]
+	end = end[end.index("to")+3 :end.index("
+	
+	'''

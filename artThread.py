@@ -40,7 +40,7 @@ class android_threads():
 			p3 = hex(struct.unpack("<I", g.read(4))[0])
 		return [p1,p2,p3]
 
-	#get the thread pointers - head, tail and start
+	#get the thread pointers - head, tail and size
 	def getTpointers(self, listAddr, th, tt, ts, path, memList):
 		tList=[]
 		counter =0;	
