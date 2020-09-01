@@ -30,6 +30,7 @@ def resolveName(klass, mapList):
 			name ='Cannot Be Resolved'
 		else:
 			name = art.getStringClass(strOff, i)
+			i.close()
 	return name	
 		
 def getNamePointer(klass, mapList):
@@ -38,6 +39,7 @@ def getNamePointer(klass, mapList):
 	if k != None:
 		k.seek(clOff+nameOff)
 		nameOff = hex(struct.unpack("<I", k.read(4))[0])
+		k.close()
 		return nameOff
 	else:
 		return "0x0"
@@ -59,6 +61,24 @@ def getType(g, objOff):
 	}
 	t = typeSwitch.get(primType, "jObject")
 	return t
+	
+	
+	
+def getComponent(g, objOff,mapList):
+	compTypeOff = art.getIndex('Class_Obj', 'component_type_')
+	g.seek(objOff+compTypeOff)
+	compClass = hex(struct.unpack("<I", g.read(4))[0])
+	#compKlassName = resolveName(compClass, mapList)
+	g.close()
+	return compClass
+	
+def getObjectSize(g, objOff, mapList):
+	objSizeOff = art.getIndex('Class_Obj', 'object_size_')
+	g.seek(objOff+objSizeOff)
+	objSize = struct.unpack("<i", g.read(4))[0]
+	#compKlassName = resolveName(compClass, mapList)
+	g.close()
+	return objSize
 	
 def getClsFlag(g, objOff):
 	clsFlagOff = art.getIndex('Class_Obj', 'class_flags_')
@@ -138,6 +158,5 @@ def getClassMembers(reference, g, objOff, mapList):
 		return [name, classFlag, primType, ifields_,methods_, sfields_, dexCache, objSize, refSize, super_class_]
 	else:
 		return [None, classFlag, primType, None,None, None, None,objSize,0,None]
-	
-	
+
 	

@@ -10,10 +10,21 @@ import sys, os, subprocess, struct,binascii
 from collections import OrderedDict
 from collections import Counter 
 
+unpack_int = struct.Struct('<I').unpack
+unpack_dec = struct.Struct('<i').unpack
+unpack_b = struct.Struct('<B').unpack #Byte or Bool
+unpack_char = struct.Struct('<c').unpack
+unpack_short = struct.Struct('<H').unpack
+unpack_float = struct.Struct('<f').unpack
+unpack_long = struct.Struct('<Q').unpack
+unpack_double = struct.Struct('<d').unpack
 
 #Dump Libs artJVM.py path -g -data
-path = sys.argv[1]
-art.path = path
+if os.path.isdir(sys.argv[1]): 
+	path = sys.argv[1]
+else:
+	path = sys.argv[2]
+#art.path = path
 [nPath, rAddr, memList, mapList, listing, lstList,runtime]=art.main(path)
 
 
@@ -26,7 +37,9 @@ def getJVMPointer(nPath, rAddr):
 	k = art.getFhandle(nPath)
 	index = art.getIndex('Runtime', 'java_vm_')
 	k.seek(rAddr + index)
-	return hex(struct.unpack("<I", k.read(4))[0])
+	ret = hex(unpack_int(k.read(4))[0])
+	k.close()
+	return ret
 
 def getJVM(jvm, memList):
 	[vmPath, offset] = art.getOffset(jvm, memList)
@@ -42,21 +55,22 @@ def getIrefTable(vmPath, offset):
 		vmPath = getNFPath(vmPath)
 		g = art.getFhandle(vmPath)
 		g.seek(offset)
-	segment_state = struct.unpack("<i", g.read(4))[0]
-	table_mem_map = hex(struct.unpack("<I", g.read(4))[0])
+	segment_state = unpack_dec(g.read(4))[0]
+	table_mem_map = hex(unpack_int(g.read(4))[0])
 	#print "TableMap "+table_mem_map
-	table_begin = hex(struct.unpack("<I", g.read(4))[0])
+	table_begin = hex(unpack_int(g.read(4))[0])
 	#print "Irtentry "+table_begin
-	ref_kind = struct.unpack("<i", g.read(4))[0]
+	ref_kind = unpack_dec(g.read(4))[0]
 	#print  "ref_kind "+ str(ref_kind)
-	max_entries = struct.unpack("<i", g.read(4))[0]
+	max_entries = unpack_dec(g.read(4))[0]
 	#print  "max entries "+ str(max_entries)
-	num_holes = struct.unpack("<i", g.read(4))[0]
+	num_holes = unpack_dec(g.read(4))[0]
 	#print  "num_holes "+ str(num_holes)
-	last_known_state = struct.unpack("<i", g.read(4))[0]
+	last_known_state = unpack_dec(g.read(4))[0]
 	#print  "last_known_state "+ str(last_known_state)
-	resizable = hex(struct.unpack("<I", g.read(4))[0])
+	resizable = hex(unpack_int(g.read(4))[0])
 	#print  "resizable "+ resizable
+	g.close()
 	return [segment_state, table_begin] 
 
 
@@ -73,7 +87,9 @@ def getWeakGlob(vmPath, offset):
 def getOwner(monitor):
 	[g, objOff] = art.fromPointer(monitor, mapList)
 	g.seek(objOff+68)
-	return hex(struct.unpack("<I", g.read(4))[0])
+	ret = hex(unpack_int(g.read(4))[0])
+	g.close()
+	return ret
 
 #get Globals artJVM.py path -g
 #get WeakRefs artJVM.py path -w
@@ -92,7 +108,8 @@ def getPointer(addr, off):
 	[tpath, offset] = art.getOffset(addr, memList)	
 	g = art.getFhandle(tpath)
 	g.seek(offset+off)
-	newAddr = hex(struct.unpack("<I", g.read(4))[0])
+	newAddr = hex(unpack_int(g.read(4))[0])
+	g.close()
 	return newAddr
 
 def getJNI(thread):
@@ -135,7 +152,8 @@ def getLibsOffset(vmPath, offset):
 	index = art.getIndex('JavaVMExt', 'libraries_')
 	g = art.getFhandle(vmPath)
 	g.seek(offset+index)
-	libraries_ = hex(struct.unpack("<I", g.read(4))[0])
+	libraries_ = hex(unpack_int(g.read(4))[0])
+	g.close()
 	return libraries_
 	
 def searchRef(ref):
@@ -154,7 +172,7 @@ def searchRef(ref):
 				print "No reference for "+ref
 		#print '\n'.join(refs)
 def searchRefLocal(ref):
-		threads = threadlist.__main__()
+		[threads, opeer] = threadlist.__main__()
 		for key, value in threads.items():
 			tName = getLocal(key, value[1], ref)
 			if tName:
@@ -164,7 +182,7 @@ def searchRefLocal(ref):
 		
 def getObjectArray(length_, addr, arrData):
 	while (length_ >0):
-		arrData.append(hex(struct.unpack("<I", addr.read(4))[0]))
+		arrData.append(hex(unpack_int(addr.read(4))[0]))
 		length_ =length_-1
 	return arrData	
 	
@@ -176,7 +194,7 @@ def getCharArray(length_, addr, arrData):
 	return arrData		
 def getIntArray(length_, addr, arrData):
 	while (length_ >0):
-		arrData.append(struct.unpack("<i", addr.read(4))[0])
+		arrData.append(unpack_dec(addr.read(4))[0])
 		length_ =length_-1
 	return arrData
 def getFloatArray(length_, addr, arrData):
@@ -207,20 +225,23 @@ def getDoubleArray(length_, addr, arrData):
 	
 def getStringArray(arrSize, i, arrData): #Needs to fix
 	while(arrSize >0):
-		strPointer = hex(struct.unpack("<I", i.read(4))[0])
+		strPointer = hex(unpack_int(i.read(4))[0])
 		[j, strOff] = art.fromPointer(strPointer, mapList)
 		if j:
 			arrData.append(art.getStringClass(strOff, j))
 		arrSize= arrSize-1
 	return arrData
-
+	
 def getStringArray(arrSize, i, arrData): #Needs to fix
 	while(arrSize >0):
-		strPointer = hex(struct.unpack("<I", i.read(4))[0])
-		[j, strOff] = art.fromPointer(strPointer, mapList)
-		if j:
-			arrData.append(art.getStringClass(strOff, j))
+		strPointer = hex(unpack_int(i.read(4))[0])
+		if strPointer!="0x0":
+			[j, strOff] = art.fromPointer(strPointer, mapList)
+			if j:
+				arrData.append(art.getStringClass(strOff, j))
+				j.close()
 		arrSize= arrSize-1
+	i.close()
 	return arrData
 
 def checkArray(name,length_, addr, arrData):
@@ -251,7 +272,7 @@ def checkArray(name,length_, addr, arrData):
 		length_ = length_*4
 	return [arrData, length_]
 	
-def getSuperClass(super_class_,fDict):
+def getSuperClass(super_class_,fDict, ret):
 	superC = True
 	while superC:
 		[sPath, sOffset] = art.getOffset(super_class_, mapList)
@@ -260,8 +281,8 @@ def getSuperClass(super_class_,fDict):
 		if (name =="java.lang.Object" or super_class_ == None):
 			superC = False
 		elif ifields_!="0x0":
-			print "Super Class Offset " + name
-			fields = fld.getFields(dexCache, ifields_, mapList)
+			ret.append("Super Class Offset " + name)
+			fields = fld.getFields(ifields_, mapList)
 			for key, values in fields.items():
 				fieldIdx = values[2]
 				cl,type ,name = dx.getMeta(dexCache,fieldIdx,mapList, memList)
@@ -269,55 +290,61 @@ def getSuperClass(super_class_,fDict):
 				#print "FieldName - "+name+ " - "+type+" offset "+str(values[3])	
 			
 def getClsObj(ref, refFile, refOff, fDict, addr, off):
+	ret=[]
 	[name, classFlag, primType, ifields_,methods_, sfields_, dexCache, objSize, refSize, super_class_] =  cls.getClassMembers(ref, refFile, refOff, mapList)
-	print "Number of Reference Instance Fields = "+str(refSize)
+	ret.append("Number of Reference Instance Fields = "+str(refSize))
 	#print " PrimType "+primType +classFlag
 	if(name and name.startswith('[')):
 		arrData=[]
 		addr.seek(off+8)
-		length_ = struct.unpack("<i", addr.read(4))[0]
-		print length_
+		length_ = unpack_dec(addr.read(4))[0]
+		ret.append("length "+str(length_))
 		[arrData, length_] = checkArray(name,length_, addr, arrData)
 		objSize = 8+4+length_
-		print "Object Size " + str(objSize)
-		print "The array data for "+name +" is " +str(arrData)
+		ret.append("Object Size " + str(objSize))
+		ret.append("The array data for "+name +" is " +str(arrData))
+		addr.close()
 	elif(name == "java.lang.String"):#&& Its a string
 		prettyName=''
 		addr.seek(off+8)
-		count = struct.unpack("<i", addr.read(4))[0]
+		count = unpack_dec(addr.read(4))[0]
 		l = count >> 1
+		if l >65536:
+			l=0
 		if (l >0):
 			addr.seek(addr.tell()+4)
 			prettyName = addr.read(l)
-			print "The data for "+name +" is " +prettyName
+			ret.append("The data for "+name +" is " +prettyName)
 		else:
-			print "Null String"
+			ret.append("Null String")
 		#print art.getStringClass(off, addr)
+		addr.close()
 		objSize = 8+4+4+l
 	elif(name):#&& classFlag==kClassFlagNormal
 		if(super_class_ and name !="java.lang.Object"):
-			getSuperClass(super_class_,fDict)
+			getSuperClass(super_class_,fDict, ret)
 		if ifields_!="0x0":
-			fields = fld.getFields(dexCache, ifields_, mapList)
+			fields = fld.getFields(ifields_, mapList)
 			for key, values in fields.items():
 				fieldIdx = values[2]
 				cl,type ,name1 = dx.getMeta(dexCache,fieldIdx,mapList, memList)			
 				#print "FieldName - "+name+ " - "+type+" offset "+str(values[3])
 				fDict[values[3]] = [name1,type]
 		if (classFlag=="kClassFlagClass"):
-			print "Is ClassClass "+name	
-			[buf,objSize] = fld.getValueClass(fDict, addr, off)
-			print "Object Size " + str(objSize)
-			print '\n'.join(buf)
+			ret.append("Is ClassClass "+name)
+			[buf,objSize, sFields, dexCache] = fld.getValueClass(fDict, addr, off)
+			ret.append("Class Size " + str(objSize))
+			ret.append('\n'.join(buf))
 		else:
-			print name+" "+classFlag
+			ret.append(name+" "+classFlag)
 			#+" "+ primType
 			#+" "+ ifields_+" "+ methods_+" "+ sfields_+" "+ dexCache
-			print "Object Size " + str(objSize)
+			ret.append("Object Size " + str(objSize))
 			if fDict:
-				fld.getValue(fDict, addr, off)
+				r = fld.getValue(fDict, addr, off)
+				[ret.append(i) for i in r]
 			else:
-				print "No Instance Fields for the object"
+				ret.append("No Instance Fields for the object")
 		'''if sfields_!="0x0":
 			sDict=OrderedDict()
 			fields = fld.getFields(dexCache, sfields_, mapList)
@@ -331,21 +358,23 @@ def getClsObj(ref, refFile, refOff, fDict, addr, off):
 		else:
 			print "No Static Fields for the object"'''
 	else:
-		print "Object is either null or cannot be dereferenced"
+		ret.append("Object is either null or cannot be dereferenced")
 		objSize=8	
-	return objSize
+	return objSize, ret
 			#print fld.getValue(ref, iIndex+values[3], mapList, type)
 	'''if sfields_!="0x0":
 			print getFields(sfields_)
 		if methods_!="0x0":
 			print getMethods(methods_)'''
 			
-def dumpRefs(ref, addr, off, start):
+def dumpRefs(ref, addr, off):
+	ret=[]
 	[klass, monitor, refFile, refOff]=cls.getOKlass(ref, mapList)
+	ret.append( monitor)
 	if klass =='0x0':
-		print "++++++++++++++++++++++++++++++++++++++++++++"
-		print "Invalid address for class"
-		print "\n"
+		ret.append( "++++++++++++++++++++++++++++++++++++++++++++")
+		ret.append( "Invalid address for class")
+		ret.append( "\n")
 		objSize=8
 		return objSize	
 	name = cls.resolveName(klass, mapList)
@@ -353,16 +382,17 @@ def dumpRefs(ref, addr, off, start):
 	objSize=0
 	#print name
 	if ('java.lang.Class' in name):
-		print "++++++++++++++++++++++++++++++++++++++++++++"
-		print "Reference Class is a Class Instance"
-		objSize = getClsObj(ref, refFile, refOff,fDict, addr, off)
-		print "\n"
+		ret.append( "++++++++++++++++++++++++++++++++++++++++++++")
+		ret.append( "Reference Class is a Class Instance")
+		objSize, r = getClsObj(ref, refFile, refOff,fDict, addr, off)
+		[ret.append(i) for i in r]
+		ret.append( "\n")
 	elif ('java.lang.String' in name):
-		print "++++++++++++++++++++++++++++++++++++++++++++"
-		print "Reference Class is String"
+		ret.append( "++++++++++++++++++++++++++++++++++++++++++++")
+		ret.append( "Reference Class is String")
 		prettyName=''
 		'''addr.seek(off+8)
-		count = struct.unpack("<i", addr.read(4))[0]
+		count = unpack_dec(addr.read(4))[0]
 		l = count >> 1
 		if (l >0):
 			addr.seek(addr.tell()+4)
@@ -372,47 +402,52 @@ def dumpRefs(ref, addr, off, start):
 			print "Null String"
 		objSize = 8+8+l #8 = object inheritance, 8=count+hash, l = length of string'''
 		refFile.seek(refOff+8)
-		count = struct.unpack("<i", refFile.read(4))[0]
+		count = unpack_dec(refFile.read(4))[0]
 		l = count >> 1
+		if l >65536:
+			l=0
 		if (l >0):
 			refFile.seek(refFile.tell()+4)
 			prettyName = refFile.read(l)
-			print prettyName
+			ret.append( prettyName)
 		else:
-			print "Null String"
+			ret.append( "Null String")
+		refFile.close()
 		objSize = 8 #8 = object inheritance, 8=count+hash, l = length of string
 		print "\n"
 	elif (name and name.startswith('[')):
 		#count number of [ and loop through
-		print "++++++++++++++++++++++++++++++++++++++++++++"
+		ret.append( "++++++++++++++++++++++++++++++++++++++++++++")
 		print "Reference Class is an "+ name +" Array "
 		arrData=[]
 		#[i, arrayObjOff] = art.fromPointer(ref, mapList)
 		#addr.seek(off+8)
 		refFile.seek(refOff+8)
-		arrSize = struct.unpack("<i", refFile.read(4))[0]
-		print "Array size is "+str(arrSize)
+		arrSize = unpack_dec(refFile.read(4))[0]
+		ret.append( "Array size is "+str(arrSize))
 		arrData = checkArray(name,arrSize, refFile, arrData)
 		if arrData:
-			print "The array data for "+name +" is " +str(arrData)
+			ret.append( "The array data for "+name +" is " +str(arrData))
 		#objSize = 8+4+len(arrData)#8 = object inheritance, 4=position for length of array, len = length of array data
 		objSize=8
-		print "\n"
+		refFile.close()
+		ret.append( "\n")
 	elif (len(name)==1):
 		obj = getPrimitive(name, addr)
-		print "++++++++++++++++++++++++++++++++++++++++++++"
-		print "Reference Class is a Primitive"
-		print obj
+		ret.append( "++++++++++++++++++++++++++++++++++++++++++++")
+		ret.append( "Reference Class is a Primitive")
+		ret.append( obj)
 		objSize=len(str(obj))
 	else:
-		print "++++++++++++++++++++++++++++++++++++++++++++"
+		ret.append( "++++++++++++++++++++++++++++++++++++++++++++")
 		objSize=8
 		if ('?' in name):
-			print ref+" Cannot Be Resolved "+ str(objSize)
+			ret.append( ref+" Cannot Be Resolved "+ str(objSize))
 		else:
-			print ref+" " +name +" "+ monitor
-		print "\n"
-	return objSize
+			ret.append( ref+" " +name +" "+ monitor)
+		ret.append( "\n")
+	refFile.close()
+	return objSize, ret
 	#get class, monitor
 		#If primitive render data
 		#If Array render

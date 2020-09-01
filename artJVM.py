@@ -9,10 +9,32 @@ import artThread as threadlist
 import sys, os, subprocess, struct,binascii
 from collections import OrderedDict
 
+unpack_int = struct.Struct('<I').unpack
+unpack_dec = struct.Struct('<i').unpack
+unpack_b = struct.Struct('<B').unpack #Byte or Bool
+unpack_char = struct.Struct('<c').unpack
+unpack_short = struct.Struct('<H').unpack
+unpack_float = struct.Struct('<f').unpack
+unpack_long = struct.Struct('<Q').unpack
+unpack_double = struct.Struct('<d').unpack
 
 #Dump Libs artJVM.py path -g -data
-path = sys.argv[1]
-art.path = path
+'''path = art.path
+nPath = art.nPath
+rAddr = art.rAddr
+memList = art.memList
+mapList = art.mapList
+listing = art.listing
+lstList = art.lstList
+runtime = art.runtime'''
+
+
+if os.path.isdir(sys.argv[1]): 
+	path = sys.argv[1]
+	print path
+else:
+	path = sys.argv[2]
+#art.path = path
 [nPath, rAddr, memList, mapList, listing, lstList,runtime]=art.main(path)
 
 
@@ -25,7 +47,7 @@ def getJVMPointer(nPath, rAddr):
 	k = art.getFhandle(nPath)
 	index = art.getIndex('Runtime', 'java_vm_')
 	k.seek(rAddr + index)
-	return hex(struct.unpack("<I", k.read(4))[0])
+	return hex(unpack_int(k.read(4))[0])
 
 def getJVM(jvm, memList):
 	[vmPath, offset] = art.getOffset(jvm, memList)
@@ -41,20 +63,20 @@ def getIrefTable(vmPath, offset):
 		vmPath = getNFPath(vmPath)
 		g = art.getFhandle(vmPath)
 		g.seek(offset)
-	segment_state = struct.unpack("<i", g.read(4))[0]
-	table_mem_map = hex(struct.unpack("<I", g.read(4))[0])
+	segment_state = unpack_dec(g.read(4))[0]
+	table_mem_map = hex(unpack_int(g.read(4))[0])
 	#print "TableMap "+table_mem_map
-	table_begin = hex(struct.unpack("<I", g.read(4))[0])
+	table_begin = hex(unpack_int(g.read(4))[0])
 	#print "Irtentry "+table_begin
-	ref_kind = struct.unpack("<i", g.read(4))[0]
+	ref_kind = unpack_dec(g.read(4))[0]
 	#print  "ref_kind "+ str(ref_kind)
-	max_entries = struct.unpack("<i", g.read(4))[0]
+	max_entries = unpack_dec(g.read(4))[0]
 	#print  "max entries "+ str(max_entries)
-	num_holes = struct.unpack("<i", g.read(4))[0]
+	num_holes = unpack_dec(g.read(4))[0]
 	#print  "num_holes "+ str(num_holes)
-	last_known_state = struct.unpack("<i", g.read(4))[0]
+	last_known_state = unpack_dec(g.read(4))[0]
 	#print  "last_known_state "+ str(last_known_state)
-	resizable = hex(struct.unpack("<I", g.read(4))[0])
+	resizable = hex(unpack_int(g.read(4))[0])
 	#print  "resizable "+ resizable
 	return [segment_state, table_begin] 
 
@@ -72,15 +94,47 @@ def getWeakGlob(vmPath, offset):
 def getOwner(monitor):
 	[g, objOff] = art.fromPointer(monitor, mapList)
 	g.seek(objOff+68)
-	return hex(struct.unpack("<I", g.read(4))[0])
+	return hex(unpack_int(g.read(4))[0])
 
 #get Globals artJVM.py path -g
 #get WeakRefs artJVM.py path -w
-def printRefs (refs):
+def printRefs (refs, lstList, mapList):
+	[start, end] = art.getSE(lstList)
 	if refs:
 		for ref in refs:
-			[klass, monitor, refFile, refOff]=cls.getOKlass(ref, mapList)		
-			print ref +" "+ cls.resolveName(klass, mapList) + " "+ monitor
+			[aPath, offset] = art.getOffset(ref, mapList)
+			addr = art.getFhandle(aPath)
+			dumpRefs(ref, addr, ref, offset)
+			#[klass, monitor, refFile, refOff]=cls.getOKlass(ref, mapList)		
+			#print ref +" "+ cls.resolveName(klass, mapList) + " "+ monitor
+notList=['dalvik.system.VMRuntime','java.lang.String', 'java.nio.DirectByteBuffer','java.lang.Class', 'java.lang.ref.WeakReference', 'Cannot Be Resolved','android.opengl.EGLContext','android.opengl.EGLDisplay','android.opengl.EGLSurface' ]			
+def printRefs (refs, lstList, mapList):
+	[start, end] = art.getSE(lstList)
+	if refs:
+		for ref in refs:
+			[klass, monitor, refFile, refOff]=cls.getOKlass(ref, mapList)
+			name = cls.resolveName(klass, mapList)
+			if not name in notList:
+				#print ref
+				[aPath, offset] = art.getOffset(ref, mapList)
+				addr = art.getFhandle(aPath)
+				dumpRefs(ref, addr, ref, offset)
+			#	
+			#print ref +" "+ cls.resolveName(klass, mapList) + " "+ monitor
+			
+			
+#get WeakRefs artJVM.py path -w
+def findThreadGCRoot (refs, lstList, mapList):
+	ref='0x0'
+	[start, end] = art.getSE(lstList)
+	if refs:
+		for ref in refs:
+			[klass, kmonitor, refFile, refOff]=cls.getOKlass(ref, mapList)
+			name = cls.resolveName(klass, mapList)
+			if name=='android.app.ActivityThread$ApplicationThread':
+				break
+	return ref 
+
 
 def printLRefs (refs):
 	print "There are "+str(len(refs)-1)+" local references in the thread "+str(refs[-1])
@@ -91,7 +145,7 @@ def getPointer(addr, off):
 	[tpath, offset] = art.getOffset(addr, memList)	
 	g = art.getFhandle(tpath)
 	g.seek(offset+off)
-	newAddr = hex(struct.unpack("<I", g.read(4))[0])
+	newAddr = hex(unpack_int(g.read(4))[0])
 	return newAddr
 
 def getJNI(thread):
@@ -134,7 +188,7 @@ def getLibsOffset(vmPath, offset):
 	index = art.getIndex('JavaVMExt', 'libraries_')
 	g = art.getFhandle(vmPath)
 	g.seek(offset+index)
-	libraries_ = hex(struct.unpack("<I", g.read(4))[0])
+	libraries_ = hex(unpack_int(g.read(4))[0])
 	return libraries_
 	
 def searchRef(ref):
@@ -153,7 +207,7 @@ def searchRef(ref):
 				print "No reference for "+ref
 		#print '\n'.join(refs)
 def searchRefLocal(ref):
-		threads = threadlist.__main__()
+		[threads, opeer] = threadlist.__main__()
 		for key, value in threads.items():
 			tName = getLocal(key, value[1], ref)
 			if tName:
@@ -163,56 +217,58 @@ def searchRefLocal(ref):
 		
 def getObjectArray(length_, addr, arrData):
 	while (length_ >0):
-		arrData.append(hex(struct.unpack("<I", addr.read(4))[0]))
+		arrData.append(hex(unpack_int(addr.read(4))[0]))
 		length_ =length_-1
 	return arrData	
 	
 def getCharArray(length_, addr, arrData):
 	length_= length_*2
 	while (length_ >0):
-		arrData.append(struct.unpack("<c", addr.read(1))[0])
+		arrData.append(unpack_char(addr.read(1))[0])
 		length_ =length_-1
 	return arrData		
 def getIntArray(length_, addr, arrData):
 	while (length_ >0):
-		arrData.append(struct.unpack("<i", addr.read(4))[0])
+		arrData.append(unpack_dec(addr.read(4))[0])
 		length_ =length_-1
 	return arrData
 def getFloatArray(length_, addr, arrData):
 	while (length_ >0):
-		arrData.append(struct.unpack("<f", addr.read(4))[0])
+		arrData.append(unpack_float(addr.read(4))[0])
 		length_ =length_-1
 	return arrData
 def getShortArray(length_, addr, arrData):
 	while (length_ >0):
-		arrData.append(struct.unpack("<H", addr.read(2))[0])
+		arrData.append(unpack_short(addr.read(2))[0])
 		length_ =length_-1
 	return arrData
 def getBArray(length_, addr, arrData):#Byte and Bool
 	while (length_ >0):
-		arrData.append(struct.unpack("<B", addr.read(1))[0])
+		arrData.append(unpack_b(addr.read(1))[0])
 		length_ =length_-1
 	return arrData	
 def getLongArray(length_, addr, arrData):
 	while (length_ >0):
-		arrData.append(struct.unpack("<Q", addr.read(8))[0])
+		arrData.append(unpack_long(addr.read(8))[0])
 		length_ =length_-1
 	return arrData	
 def getDoubleArray(length_, addr, arrData):
 	while (length_ >0):
-		arrData.append(struct.unpack("<d", addr.read(8))[0])
+		arrData.append(unpack_double(addr.read(8))[0])
 		length_ =length_-1
 	return arrData			
 	
 def getStringArray(arrSize, i, arrData): #Needs to fix
 	while(arrSize >0):
-		strPointer = hex(struct.unpack("<I", i.read(4))[0])
-		[j, strOff] = art.fromPointer(strPointer, mapList)
-		if j:
-			arrData.append(art.getStringClass(strOff, j))
+		strPointer = hex(unpack_int(i.read(4))[0])
+		if strPointer!="0x0":
+			[j, strOff] = art.fromPointer(strPointer, mapList)
+			if j:
+				arrData.append(art.getStringClass(strOff, j))
+			j.close()
 		arrSize= arrSize-1
 	return arrData
-
+	
 def checkArray(name,length_, addr, arrData):
 	if('[Ljava.lang.String' in name):
 		arrData = getStringArray(length_, addr, arrData)
@@ -244,10 +300,12 @@ def checkArray(name,length_, addr, arrData):
 def getClsObj(ref, refFile, refOff, fDict, addr, off):
 	[name, classFlag, primType, ifields_,methods_, sfields_, dexCache, objSize, refSize, super_class_] =  cls.getClassMembers(ref, refFile, refOff, mapList)
 	oSize=objSize
-	if(name and name.startswith('[')):
+	if name == None:
+		oSize = 8
+	elif(name and name.startswith('[')):
 		arrData=[]
 		addr.seek(off+8)
-		length_ = struct.unpack("<i", addr.read(4))[0]
+		length_ = unpack_dec(addr.read(4))[0]
 		[arrData, length_] = checkArray(name,length_, addr, arrData)
 		oSize = 8+4+length_
 		#print "Object Size " + str(objSize)
@@ -255,25 +313,81 @@ def getClsObj(ref, refFile, refOff, fDict, addr, off):
 	elif(name == "java.lang.String"):#&& Its a string
 		prettyName=''
 		addr.seek(off+8)
-		count = struct.unpack("<i", addr.read(4))[0]
+		count = unpack_dec(addr.read(4))[0]
 		l = count >> 1
+		if l >65536:
+			l=0
 		oSize = 8+4+4+l
-	elif (name and classFlag=="kClassFlagClass"):
-		if ifields_!="0x0":
-			fields = fld.getFields(dexCache, ifields_, mapList)
-			for key, values in fields.items():
-				fieldIdx = values[2]
+	elif (name):
+		fSize=0
+		if (classFlag=="kClassFlagClass" and ifields_!="0x0"):
+			fields = fld.getFieldsIdx(ifields_, mapList)
+			for key, value in sorted(fields.items()):
+				fieldIdx = value
 				cl,type ,name1 = dx.getMeta(dexCache,fieldIdx,mapList, memList)			
 				#print "FieldName - "+name+ " - "+type+" offset "+str(values[3])
-				fDict[values[3]] = [name1,type]
-		[buf,s] = fld.getValueClass(fDict, addr, off)
-		oSize = int(s)
+				fDict[key] = [name1,type]
+			[buf, s, sFields, cDexCache] = fld.getValueClass(fDict, addr, off)
+			#resolveKlass()
+			#print sFields
+			oSize = int(s)
+			if sFields and (sFields !="0x0"):
+				sDict=OrderedDict()
+				sDict = fld.getFieldsIdx(sFields, mapList)
+				offsets_ = sorted(sDict.keys())
+				cl,type ,sfName = dx.getMeta(cDexCache,sDict.get(offsets_[-1]),mapList, memList)
+				fSize = getSize(type)+offsets_[-1]-offsets_[0]
+				#[sDict.keys()[-1] for key, value in sorted(sDict.items())]
+				#for key, value in sorted(sDict.items()):
+				#	cl,type ,sfName = dx.getMeta(cDexCache,value,mapList, memList)	
+				#	fSize +=getSize(type)
+				#print fSize		
+					#print "FieldName - "+name+ " - "+type+" offset "+str(values[3]) +" "+cl
+					#sDict[values[3]] = [name,type]
+				#if sDict:
+					#fld.getValue(sDict, addr, off)
+			#else:
+				#print "No Static Fields for the object"
+			#if not "-3" in buf[45]:
+			#	resolveKlass(buf, dexCache, mapList, memList)
+				oSize = oSize+fSize+4
+				oSize = 32*(int(oSize / 32) + (oSize % 32 > 0))
 	return [name, oSize]
+		
+def getSize(type):
+	if (type=="Z" or type=="B"):
+		size =1
+	elif (type=="C" or type=="S"):
+		size =2
+	elif (type=="I" or type=="F"):
+		size =4
+	elif (type=="J" or type=="D"):
+		size=8
+	else:
+		size=4
+	return size	
+	
+def resolveKlass(buf, dexCache, mapList, memList):
+	addr = buf[23]
+	addr = addr.rsplit(" ")[-1]
+	addr = hex(int(addr, 10))
+	fields = fld.getFields(dexCache, mapList)
+	print fields
+	for key, values in fields.items():
+		fieldIdx = values[2]
+		cl,type ,name1 = dx.getMeta(dexCache,fieldIdx,mapList, memList)			
+		print "FieldName - "+name+ " - "+type+" offset "+str(values[3])
+	
+	
+def verifyKlass(addr, off):
+	name = cls.getComponent(addr, off,mapList)
+	print name
 
 			
-def dumpRefs(ref, addr, off, start):
-	address = hex(start+off)
-	[klass, monitor, refFile, refOff]=cls.getOKlass(ref, mapList)
+def dumpRefs(ref, addr, address, off):
+	addr.seek(off+4)
+	monitor = hex(unpack_int(addr.read(4))[0])
+	[klass, kmonitor, refFile, refOff]=cls.getOKlass(ref, mapList)
 	if klass =='0x0':
 		#print "++++++++++++++++++++++++++++++++++++++++++++"
 		#print "Invalid address for class"
@@ -284,7 +398,7 @@ def dumpRefs(ref, addr, off, start):
 	fDict=OrderedDict()
 	objSize=0
 	#print name
-	if ('java.lang.Class' in name):
+	if ('java.lang.Class' in name) and not name.startswith('['):
 		#print "++++++++++++++++++++++++++++++++++++++++++++"
 		#print "Reference Class is a Class Instance"
 		[cname, objSize] = getClsObj(ref, refFile, refOff,fDict, addr, off)
@@ -293,14 +407,14 @@ def dumpRefs(ref, addr, off, start):
 		if cname:
 			name = name+" - "+cname
 		else:
-			name = cname
+			name = name+" - Object cannot be derefenced"
 		#print "\n"
 	elif ('java.lang.String' in name):
 		#print "++++++++++++++++++++++++++++++++++++++++++++"
 		#print "Reference Class is String"
 		#prettyName=''
 		'''addr.seek(off+8)
-		count = struct.unpack("<i", addr.read(4))[0]
+		count = unpack_dec(addr.read(4))[0]
 		l = count >> 1
 		if (l >0):
 			addr.seek(addr.tell()+4)
@@ -310,7 +424,7 @@ def dumpRefs(ref, addr, off, start):
 			print "Null String"
 		objSize = 8+8+l #8 = object inheritance, 8=count+hash, l = length of string'''
 		refFile.seek(refOff+8)
-		count = struct.unpack("<i", refFile.read(4))[0]
+		count = unpack_dec(refFile.read(4))[0]
 		l = count >> 1
 		'''if (l >0):
 			refFile.seek(refFile.tell()+4)
@@ -327,7 +441,7 @@ def dumpRefs(ref, addr, off, start):
 		#[i, arrayObjOff] = art.fromPointer(ref, mapList)
 		#addr.seek(off+8)
 		refFile.seek(refOff+8)
-		arrSize = struct.unpack("<i", refFile.read(4))[0]
+		arrSize = unpack_dec(refFile.read(4))[0]
 		#print "Array size is "+str(arrSize)
 		#print "here"
 		arrData = checkArray(name,arrSize, refFile, arrData)
@@ -345,18 +459,19 @@ def dumpRefs(ref, addr, off, start):
 		objSize=8
 	else:
 		#print "++++++++++++++++++++++++++++++++++++++++++++"
-		address = ref
+		#address = ref
 		#print ref+" " +name +" "+ monitor
 		#print "\n"
 		#[cname, objSize] = getClsObj(ref, refFile, refOff,fDict, addr, off)
 		objSize=8
 	if (name):
 		if ('?' in name):
-			print "Address "+address +" "+str(objSize)
+			print "Address "+address +" "+ monitor +" "+str(objSize)
 		else:
-			print "Address "+address +" "+ name + " "+str(objSize)
+			print "Address "+address +" "+ monitor +" "+name + " "+str(objSize)
 	else:
-		print "Address "+address +" "+str(objSize)
+		print "Address "+address +" "+ monitor +" "+str(objSize)
+	refFile.close()
 	return objSize
 	#get class, monitor
 		#If primitive render data

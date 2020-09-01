@@ -218,7 +218,7 @@ art_types = {
 		'data_':[4,['pointer', ['void']]],
 		'entry_point_from_quick_compiled_code_':[8, ['pointer', ['void']]],
 	}],
-		'struct_tls32_': [0x40,{
+	'struct_tls32_': [0x40,{
 		'state_and_flags':[0,['union']],
 		'suspend_count':[4,['int']],
 		'debug_suspend_count':[8,['int']],
@@ -449,5 +449,31 @@ art_types = {
 		'oat_file_non_owned_': [44, ['pointer', ['OatFile']]],
 		'image_location_': [48, ['std::string']],
 	}],
-
+	'SpaceBitmap':[0x1c,{
+		'mem_map_':[0,[]],
+		'bitmap_begin_':[4,[]],
+		'bitmap_size_':[8,[]],
+		'heap_begin_':[12,[]],
+		'name_':[16, []],
+	}],
+	'Monitor':[0x60,{
+		'monitor_lock_':[0,[]],
+		'monitor_contenders_':[40,[]],
+		'num_waiters_':[56,[]],
+		'owner_':[60,[]],
+		'lock_count_':[64, []],
+		'obj_':[68, []],
+		'wait_set_':[72, []],
+		'hash_code_':[76, []],
+		'locking_method_':[80, []],
+		'locking_dex_pc_':[84, []],
+		'monitor_id_':[88, []],
+	}],
+	'SpaceBitmap':[0x1c,{
+		'mem_map_' : [0,[]],
+		'bitmap_begin_' :[4, []],
+		'bitmap_size_':[8, []],
+		'heap_begin_': [12, []],
+		'name_': [16,[]],
+	}],
 }
