@@ -1,35 +1,20 @@
-#!/usr/bin/python
-
+# -*- coding: utf-8 -*-
 """
-@author: Aisha Ali-Gombe
-@contact: aaligombe@towson.edu
+    @credit: Aisha Ali-Gombe (aaligombe@towson.edu)
+    @contributors: Alexandre Blanchon, Arthur Belleville, Corentin Jeudy
+
+    Brief: Parsing Module and helpful function
 """
 
-
-import art_types as types
-import sys, os, subprocess, struct,binascii
-from collections import OrderedDict
+#-- Import --#
+from utils import * 
+import re
+#-- End Import --#
 
 listing= OrderedDict()
 memList= OrderedDict()
 mapList= OrderedDict()
 lstList=""
-kAlignment =8
-kBitsPerIntPtrT = 4*8
-
-unpack_int = struct.Struct('<I').unpack
-unpack_dec = struct.Struct('<i').unpack
-unpack_b = struct.Struct('<B').unpack #Byte or Bool
-unpack_char = struct.Struct('<c').unpack
-unpack_short = struct.Struct('<H').unpack
-unpack_float = struct.Struct('<f').unpack
-unpack_long = struct.Struct('<Q').unpack
-unpack_double = struct.Struct('<d').unpack
-
-
-def OffsetToIndex(offset):
-	return offset / kAlignment / kBitsPerIntPtrT
-	
 	
 def parseFile(lstFile): #Read mfetch.lst for the beginning of art file
 	if (os.path.isfile(lstFile)):
@@ -75,25 +60,8 @@ def validateAddr(addr,start, end):
 		
 def getAddrRange(lstList):
 	for entry in lstList:
-		listing.update({entry.split()[1]:[j for j in entry.split() if ("0x") in j]})
+		listing.update({entry.split()[1][:-1]: re.search('[0-9a-f]{8,16}-[0-9a-f]{8,16}', entry).group(0).split('-')})
 	return listing
-	
-
-def getLibART(bss, instance): #search for libart.so
-	insAddr =0;
-	if ("[anon:.bss]") in bss: 
-		addRange = [j for j in bss.split() if ("0x") in j]
-		start = addRange[0]
-		end = addRange[1]
-		#print instance
-		#print start
-		insAddr = int("0x"+instance[len(instance)-4:], 16) -  int("0x"+start[len(start)-4:], 16)
-	return insAddr
-
-def lstPath(path, entry):	
-	entryPath = path+"/"+entry.split()[1]
-	return entryPath[:len(entryPath)-1]
-
 
 def findAddr(addr, lst):
 	addrInt = int(addr, 16)
@@ -102,12 +70,11 @@ def findAddr(addr, lst):
 	for key, value in lst.items():
 		v1 = int(value[1], 16)
 		v0 = int(value[0], 16)
-		if addrInt < v1:
-			if addrInt in xrange(v0, v1):
-				start = value[0]
-				end =  value[1]
-				break
-	return [addr, start, key[:len(key)-1]]
+		if v0 <= addrInt < v1:
+			start = value[0]
+			end =  value[1]
+			break
+	return start, key
 	
 		
 def getRuntime(path): #Get runtime instance 
@@ -122,18 +89,13 @@ def getBss(lstList, path, instance):#get bss section and search for runtime inst
 	#to get loadBase Address = https://stackoverflow.com/questions/18296276/base-address-of-elf 
 	#readelf.py -l /Users/aishacct/Desktop/com.facebook.katana/memory_dump/libart.so
 	#LOAD           0x000000 0x0000b000 0x0000b000 0x6f3d38 0x6f3d38 R E 0x1000
-	address = int(address[0], 16) + (int(instance, 16) - 0xb000)  
+	process = subprocess.check_output('readelf --segments '+path+'/libart.so | grep "LOAD" -A1 | grep "R E" -B1', shell=True)
+	load_address = int(process.decode('utf-8').split()[2], 16)
+	address = int(address[0], 16) + (int(instance, 16) - load_address)  
 	return [hex(address)]
 	
-	
-def getBootART(lstList, path, fname):#get bss section and search for runtime instance
-	libRange = [i for i in lstList if (fname) in i] #find all insances of libart in mfetch.lst
-	address = [j for j in libRange[0].split() if (".bin:") in j] #find begin and end address
-	address =address[0].strip(':') 
-	return [address]
-	
-def getOffset(a, alist):
-	[addr, start, key] = findAddr(a, alist)
+def getOffset(addr, alist):
+	start, key = findAddr(addr, alist)
 	if (start !=0):
 		offset = int(addr, 16) -  int(start, 16)
 		aPath = path+"/"+key
@@ -146,14 +108,10 @@ def runtimeObj(address, memList):
 	[rPath,rAddr] = getOffset(address, memList)
 	with open(rPath, 'rb') as g:
 		g.seek(rAddr)
-		runtime = hex(unpack_int(g.read(4))[0])
+		runtime = hex(unpack_addr(g))
 		[nPath, nAddr] = getOffset(runtime, memList)
 		g.close()
 		return [runtime, nPath, nAddr]	
-
-def getFhandle(f):
-	fhandle =  open(f, 'rb')
-	return fhandle		
 		
 def main(projPath):
 	global path, nPath, rAddr, memList, mapList, listing, lstList,runtime
@@ -182,9 +140,9 @@ def readString(dPath, dOff, size):
 def getNames(strPointer, memList): # Reading std::string
 	[sPath, sOff] = getOffset(strPointer, memList)
 	with open(sPath, 'rb') as f:
-		f.seek(sOff+4)
-		size = unpack_dec(f.read(4))[0]
-		dPointer = hex(unpack_int(f.read(4))[0])
+		f.seek(sOff + ARCH//8)
+		size = unpack_addr(f)
+		dPointer = hex(unpack_addr(f))
 		[dPath, dOff] = getOffset(dPointer, memList)
 		dPointer = readString(dPath, dOff, size)
 		f.close()
@@ -193,33 +151,24 @@ def getNames(strPointer, memList): # Reading std::string
 def getStringClass(strOff, i):
 	prettyName=''
 	i.seek(strOff+8)
-	count = unpack_dec(i.read(4))[0]
-	len = count >> 1
-	if (len >0):
+	count = unpack_int(i)
+	length = count >> 1
+	if (length >0):
 		i.seek(i.tell()+4)
-		prettyName = i.read(len)
+		prettyName = i.read(length)
 	i.close()
 	return prettyName
 
-def getIndex(Obj, member):
-	index = types.art_types.get(Obj)[1].get(member)[0]
-	return index
-		
-def getHeap(nPath, rAddr):
-	index = getIndex('Runtime', 'heap_')
-	heapOff = rAddr + index
-	f = getFhandle(nPath)
-	f.seek(heapOff)
-	heapAddr = hex(unpack_int(f.read(4))[0])
-	f.close()
-	return heapAddr
+def getClsSize(Obj):
+	sz = art_types.get(Obj)[0]
+	return sz
 	
 def fromPointer(pointer, list):
 	[objPath, objOff] = getOffset(pointer, list)
-	if objPath == None:
-		g= None
+	if objPath is None:
+		g = None
 	else:
-		g = getFhandle(objPath)
+		g = open(objPath, 'rb')
 	return [g, objOff]
 	
 def getRefs(table_begin, segment_state):

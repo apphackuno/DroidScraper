@@ -1,6 +1,15 @@
+# -*- coding: utf-8 -*-
+"""
+    @credit: Aisha Ali-Gombe (aaligombe@towson.edu)
+    @contributors: Alexandre Blanchon, Arthur Belleville, Corentin Jeudy
+
+    Brief: Class Module
+"""
+
+#-- Import --#
 import artParse as art
-import sys, os, subprocess, struct,binascii
-from collections import OrderedDict
+from utils import *
+#-- End Import --#
 
 name = ""
 dexCache = ""	
@@ -17,8 +26,8 @@ def getOKlass(reference, mapList):
 		return ['0x0','0x0', None, objOff]
 	else:
 		g.seek(objOff)
-		klass = hex(struct.unpack("<I", g.read(4))[0])
-		monitor = hex(struct.unpack("<I", g.read(4))[0])
+		klass = hex(unpack_uint(g))
+		monitor = hex(unpack_uint(g))
 		return [klass,monitor, g, objOff]
 	
 def resolveName(klass, mapList):
@@ -34,20 +43,20 @@ def resolveName(klass, mapList):
 	return name	
 		
 def getNamePointer(klass, mapList):
-	nameOff = art.getIndex('Class_Obj', 'name_')
+	nameOff = get_index('Class', 'name_')
 	[k, clOff] = art.fromPointer(klass, mapList)
 	if k != None:
 		k.seek(clOff+nameOff)
-		nameOff = hex(struct.unpack("<I", k.read(4))[0])
+		nameOff = hex(unpack_uint(k))
 		k.close()
 		return nameOff
 	else:
 		return "0x0"
 
 def getType(g, objOff):
-	primTypeOff = art.getIndex('Class_Obj', 'primitive_type_')
+	primTypeOff = get_index('Class', 'primitive_type_')
 	g.seek(objOff+primTypeOff)
-	primType = struct.unpack("<H", g.read(2))[0]
+	primType = unpack_uint(g)
 	typeSwitch = {
 		0: "jObject",
 		1: "jBoolean",
@@ -62,28 +71,26 @@ def getType(g, objOff):
 	t = typeSwitch.get(primType, "jObject")
 	return t
 	
-	
-	
 def getComponent(g, objOff,mapList):
-	compTypeOff = art.getIndex('Class_Obj', 'component_type_')
+	compTypeOff = get_index('Class', 'component_type_')
 	g.seek(objOff+compTypeOff)
-	compClass = hex(struct.unpack("<I", g.read(4))[0])
+	compClass = hex(unpack_uint(g))
 	#compKlassName = resolveName(compClass, mapList)
 	g.close()
 	return compClass
 	
 def getObjectSize(g, objOff, mapList):
-	objSizeOff = art.getIndex('Class_Obj', 'object_size_')
+	objSizeOff = get_index('Class', 'object_size_')
 	g.seek(objOff+objSizeOff)
-	objSize = struct.unpack("<i", g.read(4))[0]
+	objSize = unpack_uint(g)
 	#compKlassName = resolveName(compClass, mapList)
 	g.close()
 	return objSize
 	
 def getClsFlag(g, objOff):
-	clsFlagOff = art.getIndex('Class_Obj', 'class_flags_')
+	clsFlagOff = get_index('Class', 'class_flags_')
 	g.seek(objOff+clsFlagOff)
-	clsFlag = hex(struct.unpack("<I", g.read(4))[0])
+	clsFlag = hex(unpack_uint(g))
 	typeSwitch = {
 		"0x0": "kClassFlagNormal",
 		"0x1": "kClassFlagNoReferenceFields",
@@ -103,29 +110,29 @@ def getClsFlag(g, objOff):
 def getIfields(g, objOff, field):
 	fIndex=""
 	if (field=='ifields_'):
-		fIndex = art.getIndex('Class_Obj', 'ifields_')
+		fIndex = get_index('Class', 'ifields_')
 	else:
-		fIndex = art.getIndex('Class_Obj', 'sfields_')
+		fIndex = get_index('Class', 'sfields_')
 	g.seek(objOff+fIndex)
-	fields_ = hex(struct.unpack("<Q", g.read(8))[0])
+	fields_ = hex(unpack_ulong(g))
 	return fields_
 	
 def getClsMethod(g, objOff):	
-	mIndex = art.getIndex('Class_Obj', 'methods_')
+	mIndex = get_index('Class', 'methods_')
 	g.seek(objOff+mIndex)
-	methods_ = hex(struct.unpack("<Q", g.read(8))[0])
+	methods_ = hex(unpack_ulong(g))
 	return methods_
 
 def getSuperClass(g, objOff):	
-	mIndex = art.getIndex('Class_Obj', 'super_class_')
+	mIndex = get_index('Class', 'super_class_')
 	g.seek(objOff+mIndex)
-	super_class_ = hex(struct.unpack("<I", g.read(4))[0])
+	super_class_ = hex(unpack_uint(g))
 	return super_class_
 	
 def getClsDexCache(g, objOff):	
-	dexCacheIdx = art.getIndex('Class_Obj', 'dex_cache_')
+	dexCacheIdx = get_index('Class', 'dex_cache_')
 	g.seek(objOff+dexCacheIdx)
-	dexCache = hex(struct.unpack("<I", g.read(4))[0])
+	dexCache = hex(unpack_uint(g))
 	#print "dexCache "+ dexCache
 	return dexCache
 	
@@ -133,9 +140,9 @@ def getClassMembers(reference, g, objOff, mapList):
 	name = resolveName(reference, mapList)
 	primType = getType(g, objOff)
 	classFlag = getClsFlag(g, objOff)
-	obj = art.getIndex('Class_Obj', 'object_size_')
+	obj = get_index('Class', 'object_size_')
 	g.seek(objOff+obj)
-	objSize = struct.unpack("<i", g.read(4))[0]
+	objSize = unpack_uint(g)
 	if(name!='Cannot Be Resolved'):
 		dexCache = getClsDexCache(g, objOff)	
 		ifields_ = getIfields(g, objOff, 'ifields_')
@@ -144,16 +151,16 @@ def getClassMembers(reference, g, objOff, mapList):
 		#classFlag = getClsFlag(g, objOff)
 		#primType = getType(g, objOff)
 		super_class_ = 	getSuperClass(g, objOff)
-		refi = art.getIndex('Class_Obj', 'num_reference_instance_fields_')
+		refi = get_index('Class', 'num_reference_instance_fields_')
 		g.seek(objOff+refi)
-		refSize = struct.unpack("<i", g.read(4))[0]
+		refSize = unpack_uint(g)
 		#print "ref instance size "+str(refSize)
-		cls = art.getIndex('Class_Obj', 'class_size_')
+		cls = get_index('Class', 'class_size_')
 		g.seek(objOff+cls)
-		clsSize = struct.unpack("<i", g.read(4))[0]
-		ins = art.getIndex('Class_Obj', 'reference_instance_offsets_')
+		clsSize = unpack_uint(g)
+		ins = get_index('Class', 'reference_instance_offsets_')
 		g.seek(objOff+ins)
-		#print "instance off "+str(struct.unpack("<i", g.read(4))[0])
+		#print "instance off "+str(unpack_uint(g))
 		#print "Class Size "+ str(clsSize)
 		return [name, classFlag, primType, ifields_,methods_, sfields_, dexCache, objSize, refSize, super_class_]
 	else:

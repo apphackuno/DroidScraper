@@ -1,25 +1,25 @@
-import artParse as art
-import sys, os, subprocess, struct,binascii
-from collections import OrderedDict
+# -*- coding: utf-8 -*-
+"""
+    @credit: Aisha Ali-Gombe (aaligombe@towson.edu)
+    @contributors: Alexandre Blanchon, Arthur Belleville, Corentin Jeudy
 
-unpack_int = struct.Struct('<I').unpack
-unpack_dec = struct.Struct('<i').unpack
-unpack_b = struct.Struct('<B').unpack #Byte or Bool
-unpack_char = struct.Struct('<c').unpack
-unpack_short = struct.Struct('<H').unpack
-unpack_float = struct.Struct('<f').unpack
-unpack_long = struct.Struct('<Q').unpack
-unpack_double = struct.Struct('<d').unpack
+    Brief: Dex Module
+"""
+
+#-- Import --#
+import artParse as art
+from utils import * 
+#-- End Import --#
 
 def getDex(dexCache, mapList):
 	[g, offset] = art.fromPointer(dexCache, mapList)
-	dexFileIdx = art.getIndex("DexCache","dex_file_")
+	dexFileIdx = get_index("DexCache","dex_file_")
 	g.seek(offset+dexFileIdx)
-	dexFile = hex(struct.unpack("<Q", g.read(8))[0])
+	dexFile = hex(unpack_ulong(g))
 	#print "dexFile "+dexFile
-	loc_ = art.getIndex("DexCache","location_")
+	loc_ = get_index("DexCache","location_")
 	g.seek(offset+loc_)
-	loc = hex(unpack_int(g.read(4))[0])
+	loc = hex(unpack_uint(g))
 	g.close()
 	[g, offset]= art.fromPointer(loc, mapList)
 	#print "DexFile Location "+art.getStringClass(offset, g)
@@ -35,54 +35,54 @@ def getIdx(Idxs, idx, dexFile, memList):
 	return id
 		
 def getIds(g, offset):
-	strIds = art.getIndex("DexFile","string_ids_")	
+	strIds = get_index("DexFile","string_ids_")	
 	g.seek(offset+strIds)
-	sIdsOff = hex(unpack_int(g.read(4))[0])
-	fieldIds = art.getIndex("DexFile","field_ids_")	
+	sIdsOff = hex(unpack_addr(g))
+	fieldIds = get_index("DexFile","field_ids_")	
 	g.seek(offset+fieldIds)
-	fIdsOff = hex(unpack_int(g.read(4))[0])
-	methodIds = art.getIndex("DexFile","method_ids_")	
+	fIdsOff = hex(unpack_addr(g))
+	methodIds = get_index("DexFile","method_ids_")	
 	g.seek(offset+methodIds)
-	mIdsOff = hex(unpack_int(g.read(4))[0])
-	typeIds = art.getIndex("DexFile","type_ids_")	
+	mIdsOff = hex(unpack_addr(g))
+	typeIds = get_index("DexFile","type_ids_")	
 	g.seek(offset+typeIds)
-	tIdsOff = hex(unpack_int(g.read(4))[0])
-	begin = art.getIndex("DexFile","begin_")	
+	tIdsOff = hex(unpack_addr(g))
+	begin = get_index("DexFile","begin_")	
 	g.seek(offset+begin)
-	beginOff = hex(unpack_int(g.read(4))[0])
+	beginOff = hex(unpack_addr(g))
 	#fieldId = getIdx(fieldIds, fieldIdx, dexFile, memList)	
 	return [beginOff,sIdsOff, fIdsOff,mIdsOff,tIdsOff]
 	
 def getFieldIdx(fIdsOff, dex_field_index_,mapList):
 	[g, offset]= art.fromPointer(fIdsOff, mapList)
 	g.seek(offset+ (8*dex_field_index_))
-	clsIdx = unpack_short(g.read(2))[0]
-	typeIdx = unpack_short(g.read(2))[0]
-	nameIdx = unpack_dec(g.read(4))[0]
-	#typeAddr = hex(int(fIdsOff,16)+dex_field_index_+ art.getIndex("FieldId","type_idx_"))
-	#nameAddr = hex(int(fIdsOff,16)+dex_field_index_+ art.getIndex("FieldId","name_idx_"))
+	clsIdx = unpack_ushort(g)
+	typeIdx = unpack_ushort(g)
+	nameIdx = unpack_int(g)
+	#typeAddr = hex(int(fIdsOff,16)+dex_field_index_+ get_index("FieldId","type_idx_"))
+	#nameAddr = hex(int(fIdsOff,16)+dex_field_index_+ get_index("FieldId","name_idx_"))
 	g.close()
 	return [clsIdx,typeIdx,nameIdx]
 	
 '''def getStrIndex(strIdx,dexFile, memList):
-	strIds = art.getIndex("DexFile","string_ids_")
+	strIds = get_index("DexFile","string_ids_")
 	strId = getIdx(strIds, strIdx, dexFile, memList)
 	return strId'''
 
 def uleb128_decode(dataIndex, g):
 	g.seek(dataIndex)
-	result = struct.unpack("<B", g.read(1))[0]
+	result = unpack_b(g)
 	if (result > 0x7f):
-		cur = struct.unpack("<B", g.read(1))[0]
+		cur = unpack_b(g)
 		result = (result & 0x7f) | ((cur & 0x7f) << 7);
 		if (cur > 0x7f):
-			cur = struct.unpack("<B", g.read(1))[0]
+			cur = unpack_b(g)
 			result |= (cur & 0x7f) << 14;
 			if (cur > 0x7f):
-				cur = struct.unpack("<B", g.read(1))[0]
+				cur = unpack_b(g)
 				result |= (cur & 0x7f) << 21;
 				if (cur > 0x7f):
-					cur = struct.unpack("<B", g.read(1))[0]
+					cur = unpack_b(g)
 					result |= cur << 28;
 	g.seek(g.tell())
 	data = g.read(result)
@@ -92,7 +92,7 @@ def uleb128_decode(dataIndex, g):
 def getName(sIdsOff,mapList, nameIdx, beginOff):
 	[strHandle, strIdxOdd]= art.fromPointer(sIdsOff, mapList)	
 	strHandle.seek(strIdxOdd+4*nameIdx)
-	strDataItemOff =  unpack_dec(strHandle.read(4))[0]
+	strDataItemOff =  unpack_int(strHandle)
 	[bHandle, bOdd]= art.fromPointer(beginOff, mapList)
 	strHandle.close()
 	return uleb128_decode(bOdd+strDataItemOff, bHandle)
@@ -100,10 +100,10 @@ def getName(sIdsOff,mapList, nameIdx, beginOff):
 def getType(tIdsOff,mapList,typeIdx, beginOff, sIdsOff, clsIdx):
 	[tHandle, tIdxOdd]= art.fromPointer(tIdsOff, mapList)	
 	tHandle.seek(tIdxOdd+(4*typeIdx))
-	descIdx_T =  unpack_dec(tHandle.read(4))[0]
+	descIdx_T =  unpack_int(tHandle)
 	type = getName(sIdsOff,mapList, descIdx_T, beginOff)
 	tHandle.seek(tIdxOdd+(4*clsIdx))
-	descIdx_C =  unpack_dec(tHandle.read(4))[0]
+	descIdx_C =  unpack_int(tHandle)
 	cls = getName(sIdsOff,mapList, descIdx_C, beginOff)
 	tHandle.close()
 	return [type, cls]
@@ -123,7 +123,7 @@ def getMeta(dexCache,dex_field_index_,mapList, memList):
 def getFieldTypeId(fieldId)
 	[g, offset]= art.getOffset(fieldId, memList)	
 	g = getFhandle(fPath)
-	fieldIdType = art.getIndex("FieldId","type_idx_")
+	fieldIdType = get_index("FieldId","type_idx_")
 	g.seek(fOff+fieldIdType)
 	fTypeId = struct.unpack("<Q", g.read(2))[0]
 	return fTypeId
