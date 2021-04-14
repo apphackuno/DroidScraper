@@ -1,13 +1,19 @@
-#!/usr/bin/python
+# -*- coding: utf-8 -*-
 """
-@author: Aisha Ali-Gombe
-@contact: aaligombe@towson.edu
-"""
-#Program require libart.so and process maps and memfetch.lst
+    @credit: Aisha Ali-Gombe (aaligombe@towson.edu)
+    @contributors: Alexandre Blanchon, Arthur Belleville, Corentin Jeudy
 
+    Brief: Main Module
+    Note: Program require libart.so and process maps and memfetch.lst
+"""
+
+#-- Import --#
 import sys
 import artParse as art
 from time import time
+from utils import * 
+#-- End Import --#
+
 
 def getRuntime():
 	try:
@@ -68,11 +74,11 @@ def getHeap():
 		except Exception, ex:
 			print str(ex) +"\nThe option nontlab requires two additional arguments - region offset and number of objects to recover"
 	elif (sys.argv[3]=="decodeObject"):#Works with Heap option to print decode an Objects - requires Object offset
-		try:
-			[TLAB, NonTLAB, threads, bitmap_size_, heapBegin_] = getGlobals()
-			print decodeObject(bitmap_size_, heapBegin_)
-		except Exception, ex:
-			print str(ex) +"\nThe option decodeObject requires an additional argument - object offset"		
+		# try:
+		[TLAB, NonTLAB, threads, bitmap_size_, heapBegin_] = getGlobals()
+		print decodeObject(bitmap_size_, heapBegin_)
+		# except Exception, ex:
+		# 	print str(ex) +"\nThe option decodeObject requires an additional argument - object offset"		
 		
 def getAllHeap():
 	[TLAB, NonTLAB, threads, bitmap_size_, heapBegin_] = art.helper(hp, th, nPath, rAddr, path, memList)

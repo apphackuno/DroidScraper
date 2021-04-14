@@ -1,55 +1,49 @@
+# -*- coding: utf-8 -*-
 """
-@author: Aisha Ali-Gombe
-@contact: aaligombe@towson.edu
+    @credit: Aisha Ali-Gombe (aaligombe@towson.edu)
+    @contributors: Alexandre Blanchon, Arthur Belleville, Corentin Jeudy
+
+    Brief: Thread Module
 """
 
+#-- Import --#
 import artParse as art
-import art_types as types
-import sys, os, subprocess, struct,binascii
-from collections import OrderedDict
-
-unpack_int = struct.Struct('<I').unpack
-unpack_dec = struct.Struct('<i').unpack
-unpack_b = struct.Struct('<B').unpack #Byte or Bool
-unpack_char = struct.Struct('<c').unpack
-unpack_short = struct.Struct('<H').unpack
-unpack_float = struct.Struct('<f').unpack
-unpack_long = struct.Struct('<Q').unpack
-unpack_double = struct.Struct('<d').unpack
+from utils import * 
+#-- End Import --#
 
 class android_threads():
 
 	def getTLPointer(self, nPath, rAddr):
-		k = art.getFhandle(nPath)
-		index = types.art_types.get('Runtime')[1].get('thread_list_')[0]
+		k = open(nPath, 'rb')
+		index = get_index('Runtime', 'thread_list_')
 		k.seek(rAddr + index)
-		TLPointer = hex(unpack_int(k.read(4))[0])
+		TLPointer = hex(unpack_addr(k))
 		k.close()
 		return TLPointer
 
 	#get list head, tail and size	
 	def getTData(self, tAddr, path, memList):
-		[addr, start, key] = art.findAddr(tAddr, memList)
-		listOff= int(addr, 16) -  int(start, 16)
+		[start, key] = art.findAddr(tAddr, memList)
+		listOff= int(tAddr, 16) -  int(start, 16)
 		tPath = path+"/"+key
-		index = types.art_types.get('ThreadList')[1].get('list_')[0]
-		listAddr = hex(int(addr, 16) +index)	
+		index = get_index('ThreadList', 'list_')
+		listAddr = hex(int(tAddr, 16) +index)	
 		with open(tPath, 'rb') as g:
 			g.seek(listOff + index)
-			th = hex(unpack_int(g.read(4))[0])
-			tt = hex(unpack_int(g.read(4))[0])
-			ts = unpack_dec(g.read(4))[0]
+			tl_head = hex(unpack_addr(g))
+			tl_tail = hex(unpack_addr(g))
+			tl_size = unpack_int(g)
 			g.close()
-		return [listAddr, th,tt,ts]	
+		return [listAddr, tl_head,tl_tail,tl_size]	
 
 
 	def procThread(self,listAddr, memList):
 		[npath, offset] = art.getOffset(listAddr, memList)
 		with open(npath, 'rb') as g:
 			g.seek(offset)
-			p1 = hex(unpack_int(g.read(4))[0])
-			p2 = hex(unpack_int(g.read(4))[0])
-			p3 = hex(unpack_int(g.read(4))[0])
+			p1 = hex(unpack_addr(g))
+			p2 = hex(unpack_addr(g))
+			p3 = hex(unpack_addr(g))
 			g.close()
 		return [p1,p2,p3]
 
@@ -78,21 +72,25 @@ class android_threads():
 	def getThreads(self, tList, memList):
 		threads = OrderedDict()
 		opeer=[]
+		tls32_index = get_index('Thread','tls32_')
+		thread_id_index = get_index('tls_32bit_sized_values', 'tid')
+		tlsPtr_index = get_index('Thread','tlsPtr_')
+		name_index = get_index('tls_ptr_sized_values', 'name')
+		s_index = get_index('tls_ptr_sized_values', 'opeer')
+
 		for t in tList:
 			[tpath, offset] = art.getOffset(t, memList)	
 			with open(tpath, 'rb') as g:
-				tls32Index = types.art_types.get('Thread')[1].get('tls32_')[0]
-				tidIndex = types.art_types.get('struct_tls32_')[1].get('tid')[0] + tls32Index
-				g.seek(offset+tidIndex)
-				tid = unpack_dec(g.read(4))[0]
-				tlsPtrIndex = types.art_types.get('Thread')[1].get('tlsPtr_')[0]
-				nameIndex = tlsPtrIndex + types.art_types.get('struct_tlsPtr_')[1].get('name')[0]
-				g.seek(offset+nameIndex)
-				strPointer = hex(unpack_int(g.read(4))[0])
-				sIndex = tlsPtrIndex + types.art_types.get('struct_tlsPtr_')[1].get('opeer')[0]
-				g.seek(offset+sIndex)
-				tInstance = hex(unpack_int(g.read(4))[0])
-				dPointer = art.getNames(strPointer, memList)
+				g.seek(offset + tls32_index + thread_id_index)
+				tid = unpack_uint(g)
+				g.seek(offset + tlsPtr_index + name_index)
+				strPointer = hex(unpack_addr(g))
+				g.seek(offset + tlsPtr_index + s_index)
+				tInstance = hex(unpack_addr(g))
+				if VERSION == '8.0' and ARCH == 64:
+					dPointer = 'To Fix'
+				else:
+					dPointer = art.getNames(strPointer, memList)
 				threads.update({t:[tid, dPointer,strPointer]})
 				opeer.append(tInstance)
 				g.close()
@@ -111,7 +109,7 @@ class android_threads():
 		[mPath, offset] = art.getOffset(mAddr, mapList)	
 		print mPath, offset
 		with open(mPath, 'rb') as g:
-			t = types.art_types.get('Monitor')[1].get('owner')[0]
+			t = get_index('Monitor', 'owner')
 			print t
 			tList.append(t)
 			threads = self.getThreads(tList, memList)
